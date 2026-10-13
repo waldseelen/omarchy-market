@@ -467,7 +467,7 @@ Item {
   function copyInstallCommand(plugin) {
     if (!plugin || !plugin.repo) return
     var cmd = "omarchy plugin add " + plugin.repo + " --enable"
-    copyCmdProc.command = ["bash", "-c", "echo -n '" + cmd + "' | wl-copy && notify-send 'Omarchy Market' 'Kurulum komutu panoya kopyalandı:\n" + cmd + "' -i software-properties"]
+    copyCmdProc.command = ["bash", "-c", "echo -n '" + cmd + "' | wl-copy && notify-send 'Omarchy Market' 'Install command copied to clipboard:\n" + cmd + "' -i software-properties"]
     copyCmdProc.running = true
   }
 
@@ -1217,7 +1217,7 @@ Item {
             spacing: Style.space(6)
 
             Button {
-              text: "Keşfet (Browse)"
+              text: "Browse"
               height: parent.height
               bordered: true
               focusable: true
@@ -1228,7 +1228,7 @@ Item {
               onClicked: root.setView("browse")
             }
             Button {
-              text: "Yönet (Manage)"
+              text: "Manage"
               height: parent.height
               bordered: true
               focusable: true
@@ -1239,7 +1239,7 @@ Item {
               onClicked: root.setView("manage")
             }
             Button {
-              text: "Güncellemeler (" + root.updateCount + ")"
+              text: "Updates (" + root.updateCount + ")"
               height: parent.height
               bordered: true
               focusable: true
