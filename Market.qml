@@ -79,6 +79,7 @@ Item {
 
   // Preview & README
   property string previewPath: ""
+  property string previewTargetFile: ""
   property string previewRequestUrl: ""
   property string previewActiveUrl: ""
   property string currentReadmeText: ""
@@ -171,7 +172,7 @@ Item {
 
   readonly property bool installHandoffActive: root.installHandoffPluginId !== ""
   readonly property bool operationRunning: installProc.running || managementProc.running
-    || installedProc.running || actionEligibilityProc.running
+    || installedProc.running
     || postInstallEnableProc.running || postInstallRescanProc.running
     || postInstallPresenceProc.running
   readonly property bool installBusy: root.operationRunning || root.installHandoffActive
@@ -377,8 +378,7 @@ Item {
     root.selectedIndex = rows.length > 0 ? nextIndex : 0
     Qt.callLater(function() {
       if (root.displayRows.length > 0 && pluginList) pluginList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
-      root.refreshPreview()
-      root.refreshReadme()
+      previewDebounceTimer.restart()
     })
   }
 
@@ -389,16 +389,18 @@ Item {
 
   function select(index) {
     if (index < 0 || index >= root.displayRows.length) return
+    if (root.selectedIndex === index) return
     root.selectedIndex = index
     if (pluginList) pluginList.positionViewAtIndex(index, ListView.Contain)
-    root.refreshPreview()
-    root.refreshReadme()
+    previewDebounceTimer.restart()
   }
 
   function selectRelative(delta) {
     if (root.viewMode !== "browse") return
     if (root.displayRows.length === 0) return
-    root.select((root.selectedIndex + delta + root.displayRows.length) % root.displayRows.length)
+    root.selectedIndex = (root.selectedIndex + delta + root.displayRows.length) % root.displayRows.length
+    if (pluginList) pluginList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
+    previewDebounceTimer.restart()
   }
 
   function setView(mode) {
@@ -431,12 +433,19 @@ Item {
   function refreshPreview() {
     var source = root.selectedPlugin ? String(root.selectedPlugin.previewImage || "") : ""
     root.previewRequestUrl = source
-    root.previewPath = ""
-    if (!source) return
+    if (!source) {
+      root.previewPath = ""
+      root.previewTargetFile = ""
+      return
+    }
+
+    var cleanName = source.substring(source.lastIndexOf("/") + 1) || "preview.webp"
+    var targetFile = root.cacheDir + "/previews/" + cleanName
+    root.previewTargetFile = targetFile
+
     if (previewProc.running) return
     root.previewActiveUrl = source
-    previewProc.command = ["bash", root.pluginDir + "/fetch-preview", source,
-      Quickshell.env("XDG_RUNTIME_DIR") + "/omarchy-marketplace-preview.png"]
+    previewProc.command = ["bash", root.pluginDir + "/fetch-preview", source, targetFile]
     previewProc.running = true
   }
 
@@ -472,7 +481,7 @@ Item {
   // Installed Plugins & Management
   // --------------------------------------------------------------------------
   function refreshInstalled() {
-    if (installedProc.running || installProc.running || managementProc.running || actionEligibilityProc.running) return
+    if (installedProc.running || installProc.running || managementProc.running) return
     root.installedRequestParsed = false
     installedProc.running = true
   }
@@ -879,6 +888,15 @@ Item {
   Timer { id: rebuildTimer; interval: 35; onTriggered: root.rebuildDisplay() }
   Timer { id: managedRebuildTimer; interval: 35; onTriggered: root.rebuildManaged() }
   Timer { id: pendingInstallTimer; interval: 250; onTriggered: { if (MarketplaceSession.pendingInstallId) root.refreshInstalled() } }
+  Timer {
+    id: previewDebounceTimer
+    interval: 80
+    repeat: false
+    onTriggered: {
+      root.refreshPreview()
+      if (root.rightTabMode === "readme") root.refreshReadme()
+    }
+  }
 
   // Instant local cache loader
   Process {
@@ -942,8 +960,13 @@ Item {
   Process {
     id: previewProc
     onExited: function(code) {
-      if (code === 0 && root.previewActiveUrl === root.previewRequestUrl) {
-        root.previewPath = "file://" + Quickshell.env("XDG_RUNTIME_DIR") + "/omarchy-marketplace-preview.png"
+      var selectedSource = root.selectedPlugin ? String(root.selectedPlugin.previewImage || "") : ""
+      if (root.previewActiveUrl !== selectedSource) {
+        Qt.callLater(function() { root.refreshPreview() })
+        return
+      }
+      if (code === 0 && root.previewTargetFile) {
+        root.previewPath = root.previewTargetFile
       } else {
         root.previewPath = ""
       }
@@ -1536,22 +1559,27 @@ Item {
 
                     // Optional preview thumbnail
                     BorderSurface {
+                      id: previewFrame
                       visible: detailPreview.status === Image.Ready
+                      readonly property bool portraitImage: detailPreview.status === Image.Ready
+                        && detailPreview.sourceSize.height > detailPreview.sourceSize.width * 1.15
                       width: parent.width
-                      height: Math.min(Style.space(240), parent.width * 0.45)
-                      color: Util.alpha(root.foreground, 0.04)
-                      borderSpec: Border.flat(Util.alpha(root.border, 0.3), Math.max(1, Style.normalBorderWidth))
+                      height: visible ? (portraitImage
+                        ? Math.min(Style.space(380), detailPane.height * 0.55)
+                        : Math.min(Style.space(260), detailPane.height * 0.4)) : 0
+                      color: Util.alpha(root.foreground, 0.035)
+                      borderSpec: Border.flat(Util.alpha(root.border, 0.25), Math.max(1, Style.normalBorderWidth))
                       radius: Style.cornerRadius
                       clip: true
 
                       Image {
                         id: detailPreview
                         anchors.fill: parent
-                        anchors.margins: Style.space(6)
+                        anchors.margins: Style.space(8)
                         source: root.previewPath
                         visible: source.toString() !== ""
                         asynchronous: true
-                        cache: false
+                        cache: true
                         fillMode: Image.PreserveAspectFit
                       }
                     }
@@ -2055,7 +2083,9 @@ Item {
 
               Text {
                 visible: root.updateRows.length === 0
-                anchors.centerIn: parent
+                anchors.horizontalCenter: parent.horizontalCenter
+                topPadding: 40
+                bottomPadding: 40
                 text: updateCheckProc.running ? "Checking Git repositories for updates…" : "All installed community plugins are up to date!"
                 color: root.foreground
                 opacity: 0.6

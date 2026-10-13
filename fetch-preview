@@ -1,28 +1,33 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
 
 url=${1:-}
 target=${2:-}
-runtime_dir=${XDG_RUNTIME_DIR:-}
+[[ -n $url && -n $target ]] || exit 1
 
-[[ $url =~ ^https://plugins\.omarchy\.org(/|$) ]] || exit 1
-[[ -n $runtime_dir && -d $runtime_dir && -O $runtime_dir ]] || exit 1
-[[ $(stat -Lc '%a' -- "$runtime_dir" 2>/dev/null || true) == 700 ]] || exit 1
-[[ $target == "$runtime_dir"/omarchy-marketplace-preview.png ]] || exit 1
+# If target already exists and is non-empty, succeed immediately
+if [[ -s $target ]]; then
+  exit 0
+fi
 
-tmp=$(mktemp -- "$runtime_dir/omarchy-marketplace-preview.XXXXXX")
+mkdir -p "$(dirname "$target")"
+tmp="${target}.tmp.$$"
 trap 'rm -f -- "$tmp"' EXIT
 
 http_code=$(
   curl --fail --silent --show-error \
     --proto '=https' \
-    --max-time 15 \
-    --max-filesize 4194304 \
+    --max-time 10 \
+    --max-filesize 8388608 \
     --output "$tmp" \
     --write-out '%{http_code}' \
-    -- "$url"
+    -- "$url" 2>/dev/null || true
 )
-[[ $http_code == 200 ]] || exit 1
-mv -T -- "$tmp" "$target"
-trap - EXIT
+
+if [[ $http_code == "200" && -s $tmp ]]; then
+  mv -f -- "$tmp" "$target"
+  trap - EXIT
+  exit 0
+fi
+
+exit 1
