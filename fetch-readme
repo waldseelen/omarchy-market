@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo=${1:-}
+[[ -n $repo ]] || exit 1
+
+owner_repo=$(echo "$repo" | sed -E 's|https?://github.com/([^/]+/[^/]+).*|\1|' | sed -E 's|\.git$||')
+clean=$(echo "$owner_repo" | tr '/' '_')
+cache_dir="$HOME/.cache/omarchy/readmes"
+mkdir -p "$cache_dir"
+target="$cache_dir/$clean.md"
+
+if [[ ! -s $target ]]; then
+  content=$(curl -sL --max-time 5 "https://raw.githubusercontent.com/$owner_repo/HEAD/README.md" 2>/dev/null || true)
+  if [[ -z $content || $content == *"404: Not Found"* ]]; then
+    content=$(curl -sL --max-time 5 "https://raw.githubusercontent.com/$owner_repo/main/README.md" 2>/dev/null || true)
+  fi
+  if [[ -z $content || $content == *"404: Not Found"* ]]; then
+    content=$(curl -sL --max-time 5 -H 'Accept: application/vnd.github.raw+json' "https://api.github.com/repos/$owner_repo/readme" 2>/dev/null || true)
+  fi
+  if [[ -n $content && $content != *"Not Found"* ]]; then
+    echo "$content" > "$target"
+  else
+    echo "# $owner_repo
+
+*README could not be retrieved from GitHub or repository is private.*" > "$target"
+  fi
+fi
+
+cat "$target"

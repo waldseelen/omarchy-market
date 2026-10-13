@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "waldseelen.market",
+  "name": "Omarchy Market",
+  "version": "2.0.0",
+  "author": "waldseelen",
+  "license": "MIT",
+  "description": "Native Quickshell marketplace for Omarchy plugins with live search, README previews, management, and updates.",
+  "repository": "https://github.com/waldseelen/omarchy-market",
+  "kinds": [
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Market.qml"
+  }
+}
