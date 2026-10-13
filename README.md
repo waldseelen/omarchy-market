@@ -2,6 +2,13 @@
 
 Next-generation native Quickshell plugin marketplace for Omarchy Quattro.
 
+<p align="center">
+  <img src="preview.png" alt="Omarchy Market - Browse" width="960">
+</p>
+<p align="center">
+  <img src="manage-preview.png" alt="Omarchy Market - Manage" width="960">
+</p>
+
 ## Features & Improvements Over Standard Marketplace
 - **Super+N Native Overlay**: Dedicated fullscreen modal overlay bound directly to `Super + N` with Esc / scrim click dismissal.
 - **Live GitHub README Viewer**: Reads, caches (`~/.cache/omarchy/readmes/`), and renders complete GitHub READMEs with markdown formatting.
