@@ -176,7 +176,8 @@ Item {
     || postInstallEnableProc.running || postInstallRescanProc.running
     || postInstallPresenceProc.running
   readonly property bool installBusy: root.operationRunning || root.installHandoffActive
-  readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/waldseelen.market"
+  readonly property string pluginId: (root.manifest && root.manifest.id) ? root.manifest.id : "waldseelen.market"
+  readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/" + root.pluginId
   readonly property string cacheDir: Quickshell.env("HOME") + "/.cache/omarchy"
   readonly property string localCatalogPath: cacheDir + "/plugins-catalog.json"
 
