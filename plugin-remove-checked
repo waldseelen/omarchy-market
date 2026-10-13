@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+fail() {
+  printf 'plugin-remove-checked: %s\n' "$*" >&2
+  exit 1
+}
+
+id=${1:-}
+plugins_dir="$HOME/.config/omarchy/plugins"
+plugin_dir="$plugins_dir/$id"
+
+[[ $id =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && $id != *..* ]] || fail "invalid plugin id"
+[[ $id != "waldseelen.market" ]] || fail "cannot remove the running marketplace"
+[[ -e $plugin_dir || -L $plugin_dir ]] || fail "plugin is not installed"
+
+# Execute custom uninstall/remove script if provided by plugin
+for script_name in "uninstall.sh" "remove.sh" "cleanup.sh"; do
+  custom_script="$plugin_dir/$script_name"
+  if [[ -f "$custom_script" && ! -L "$custom_script" ]]; then
+    printf 'Executing %s for %s...\n' "$script_name" "$id"
+    chmod +x "$custom_script" 2>/dev/null || true
+    bash "$custom_script" || printf 'Warning: %s exited with non-zero status\n' "$script_name" >&2
+    break
+  fi
+done
+
+# Remove via official omarchy cli
+omarchy plugin remove "$id" --yes
+
+# Rescan shell plugins
+omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
+
+printf 'Successfully removed %s\n' "$id"

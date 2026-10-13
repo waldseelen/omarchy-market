@@ -18,6 +18,7 @@ Item {
   property bool catalogLoaded: false
   property bool catalogRequestParsed: false
   property bool installConfirmOpen: false
+  property string pendingPlacement: "center" // "left" | "center" | "right"
   property string errorMessage: ""
   property string statusMessage: ""
   property string generatedAt: ""
@@ -651,7 +652,7 @@ Item {
         || !MarketplaceModel.repoIsSafe(plugin.repo)) return
     root.pendingPlugin = plugin
     root.pendingAction = "install"
-    installConfirm.selectedIndex = 0
+    root.pendingPlacement = "center"
     root.installConfirmOpen = true
   }
 
@@ -688,6 +689,7 @@ Item {
     MarketplaceSession.pendingInstallStage = "installing"
     MarketplaceSession.pendingInstallToken = String(Date.now())
     MarketplaceSession.pendingInstallAllowEnable = !root.pluginReplacesBar(plugin)
+    MarketplaceSession.pendingPlacement = root.pendingPlacement || "center"
     MarketplaceSession.pendingInstallAttempts = 0
     MarketplaceSession.pendingEnableAttempts = 0
     root.statusMessage = "Installing " + plugin.pluginName + "…"
@@ -763,8 +765,11 @@ Item {
       MarketplaceSession.pendingInstallStage = "enabling"
       MarketplaceSession.pendingInstallAttempts = 0
       MarketplaceSession.pendingEnableAttempts++
-      root.statusMessage = "Enabling " + name + "…"
-      postInstallEnableProc.command = ["omarchy", "plugin", "enable", id]
+      var enableCmd = ["omarchy", "plugin", "enable", id]
+      if (plugin.kinds && plugin.kinds.indexOf("bar-widget") !== -1 && plugin.kinds.indexOf("bar") === -1) {
+        enableCmd.push("--section", MarketplaceSession.pendingPlacement || "center")
+      }
+      postInstallEnableProc.command = enableCmd
       postInstallEnableProc.running = true
       return
     }
@@ -802,12 +807,13 @@ Item {
 
     var needsConfirmation = action === "update" || action === "remove"
       || (action === "enable" && !plugin.firstParty)
+      || (action === "enable" && root.isBarWidget(plugin))
     if (needsConfirmation) {
       root.pendingUpdateLocalCommit = action === "update" ? String(plugin.localCommit || "") : ""
       root.pendingUpdateRemoteCommit = action === "update" ? String(plugin.remoteCommit || "") : ""
       root.pendingManagedPlugin = plugin
       root.pendingAction = action
-      installConfirm.selectedIndex = 0
+      root.pendingPlacement = "center"
       root.installConfirmOpen = true
       return
     }
@@ -838,7 +844,13 @@ Item {
     root.managementStdout = ""
     root.managementStderr = ""
 
-    if (action === "enable") managementProc.command = ["omarchy", "plugin", "enable", plugin.pluginId]
+    if (action === "enable") {
+      var enableCmd = ["omarchy", "plugin", "enable", plugin.pluginId]
+      if (root.isBarWidget(plugin)) {
+        enableCmd.push("--section", root.pendingPlacement || "center")
+      }
+      managementProc.command = enableCmd
+    }
     else if (action === "disable") managementProc.command = ["omarchy", "plugin", "disable", plugin.pluginId]
     else if (action === "update") {
       if (plugin.localCommit && plugin.remoteCommit) {
@@ -848,7 +860,9 @@ Item {
         managementProc.command = ["omarchy", "plugin", "update", plugin.pluginId, "--yes"]
       }
     }
-    else if (action === "remove") managementProc.command = ["omarchy", "plugin", "remove", plugin.pluginId, "--yes"]
+    else if (action === "remove") {
+      managementProc.command = ["bash", root.pluginDir + "/plugin-remove-checked", plugin.pluginId]
+    }
     else return
 
     root.statusMessage = (action === "update" ? "Updating " : action.charAt(0).toUpperCase() + action.slice(1) + " ")
@@ -881,6 +895,15 @@ Item {
   function pluginReplacesBar(plugin) {
     var kind = String(plugin && plugin.kind || "").toLowerCase().trim()
     return kind === "bar" || kind === "full bar"
+  }
+
+  function isBarWidget(plugin) {
+    if (!plugin) return false
+    if (Array.isArray(plugin.kinds)) {
+      return plugin.kinds.indexOf("bar-widget") !== -1 && plugin.kinds.indexOf("bar") === -1
+    }
+    var k = String(plugin.kind || "").toLowerCase().replace(/[\s_-]+/g, "-")
+    return k === "bar-widget" || (k.indexOf("bar") !== -1 && k.indexOf("full") === -1 && k !== "bar")
   }
 
   // --------------------------------------------------------------------------
@@ -1051,6 +1074,14 @@ Item {
   Process { id: installReceiptCleanupProc }
   Process { id: copyCmdProc }
   Process { id: openBrowserProc }
+  Process {
+    id: restartShellProc
+    command: ["omarchy-restart-shell"]
+    onExited: function(code) {
+      if (code === 0) root.statusMessage = "Omarchy shell restarted."
+      else root.statusMessage = "Failed to restart shell."
+    }
+  }
 
   // --------------------------------------------------------------------------
   // Main Overlay Surface UI
@@ -1063,7 +1094,9 @@ Item {
 
     WlrLayershell.namespace: "omarchy-market"
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: root.opened ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: (root.opened && !root.operationRunning && !root.installBusy)
+      ? WlrKeyboardFocus.Exclusive
+      : (root.opened ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None)
     exclusionMode: ExclusionMode.Ignore
 
     // Dark Scrim background with smooth fade
@@ -1104,7 +1137,13 @@ Item {
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
           if (root.installConfirmOpen) {
-            if (installConfirm.handleKey(event)) event.accepted = true
+            if (event.key === Qt.Key_Escape) {
+              root.cancelInstall()
+              event.accepted = true
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+              root.confirmPendingAction()
+              event.accepted = true
+            }
             return
           }
           if (sortDropdown.popupOpen || managementDropdown.popupOpen) return
@@ -1129,24 +1168,6 @@ Item {
             event.accepted = true
           }
         }
-
-        ConfirmDialog {
-          id: installConfirm
-          anchors.fill: parent
-          opened: root.installConfirmOpen
-          z: 30
-          message: root.pendingPlugin || root.pendingManagedPlugin ? root.confirmationMessage() : ""
-          confirmText: root.confirmationButtonText()
-          background: root.background
-          foreground: root.foreground
-          scrim: root.scrim
-          selectedBackground: root.selectedBackground
-          selectedText: root.accent
-          fontFamily: root.fontFamily
-          cornerRadius: Style.cornerRadius
-          onCanceled: root.cancelInstall()
-          onConfirmed: root.confirmPendingAction()
-        }
       }
 
       Column {
@@ -1167,7 +1188,7 @@ Item {
 
           // App Title + Status
           Row {
-            width: parent.width - viewTabsRow.width - refreshButton.width - parent.spacing * 2
+            width: parent.width - viewTabsRow.width - headerActions.width - parent.spacing * 2
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(10)
 
@@ -1252,22 +1273,46 @@ Item {
             }
           }
 
-          // Refresh Button
-          Button {
-            id: refreshButton
+          // Header Actions: Restart Shell & Refresh
+          Row {
+            id: headerActions
             anchors.verticalCenter: parent.verticalCenter
-            text: root.loading || installedProc.running || updateCheckProc.running ? "Refreshing…" : "Refresh"
-            bordered: true
-            focusable: true
-            enabled: !root.operationRunning
-            foreground: root.foreground
-            accent: root.accent
-            fontSize: root.smallFontSize
-            onClicked: {
-              if (root.viewMode === "browse") {
-                root.refreshCatalog()
-                root.refreshInstalled()
-              } else root.refreshInstalled()
+            spacing: Style.space(6)
+
+            Button {
+              id: restartShellButton
+              anchors.verticalCenter: parent.verticalCenter
+              text: restartShellProc.running ? "Restarting…" : "Restart Shell"
+              height: Style.space(32)
+              bordered: true
+              focusable: true
+              enabled: !restartShellProc.running
+              foreground: root.foreground
+              accent: root.accent
+              fontSize: root.smallFontSize
+              onClicked: {
+                root.statusMessage = "Restarting Omarchy shell…"
+                restartShellProc.running = true
+              }
+            }
+
+            Button {
+              id: refreshButton
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.loading || installedProc.running || updateCheckProc.running ? "Refreshing…" : "Refresh"
+              height: Style.space(32)
+              bordered: true
+              focusable: true
+              enabled: !root.operationRunning
+              foreground: root.foreground
+              accent: root.accent
+              fontSize: root.smallFontSize
+              onClicked: {
+                if (root.viewMode === "browse") {
+                  root.refreshCatalog()
+                  root.refreshInstalled()
+                } else root.refreshInstalled()
+              }
             }
           }
         }
@@ -1676,20 +1721,74 @@ Item {
                       width: parent.width
                       spacing: Style.space(8)
 
+                      readonly property var instPlugin: root.selectedPlugin ? root.installedPluginById(root.selectedPlugin.pluginId) : null
+                      readonly property var updateInfo: root.selectedPlugin ? root.updateStatusById[root.selectedPlugin.pluginId] : null
+
+                      // 1. Install & Enable (when not installed)
                       Button {
-                        text: root.selectedPlugin && root.selectedPlugin.installed
-                          ? "Installed"
-                          : (root.selectedPlugin && root.selectedPlugin.pluginId === root.installingPluginId
-                            ? "Installing…" : "Install & Enable")
+                        visible: !root.selectedPlugin || !root.selectedPlugin.installed
+                        text: root.selectedPlugin && root.selectedPlugin.pluginId === root.installingPluginId
+                          ? "Installing…" : "Install & Enable"
                         bordered: true
-                        selected: root.selectedPlugin && !root.selectedPlugin.installed
-                        enabled: root.selectedPlugin && !root.selectedPlugin.installed && !root.installBusy
+                        selected: true
+                        enabled: root.selectedPlugin && !root.installBusy
                         foreground: root.foreground
                         accent: root.accent
                         fontSize: root.smallFontSize
                         onClicked: if (root.selectedPlugin) root.requestInstall(root.selectedPlugin)
                       }
 
+                      // 2. Enable / Disable Toggle (when installed)
+                      Button {
+                        visible: root.selectedPlugin && root.selectedPlugin.installed && parent.instPlugin !== null && parent.instPlugin.canDisable !== false
+                        text: parent.instPlugin && parent.instPlugin.enabled ? "Disable" : "Enable"
+                        bordered: true
+                        selected: parent.instPlugin && !parent.instPlugin.enabled
+                        enabled: !root.operationRunning
+                        foreground: root.foreground
+                        accent: root.accent
+                        fontSize: root.smallFontSize
+                        onClicked: {
+                          if (parent.instPlugin) root.requestManagementAction(parent.instPlugin.enabled ? "disable" : "enable", parent.instPlugin)
+                        }
+                      }
+
+                      // 3. Update Button (when update is available)
+                      Button {
+                        visible: root.selectedPlugin && root.selectedPlugin.installed && parent.instPlugin !== null && parent.updateInfo && parent.updateInfo.status === "available"
+                        text: "Update"
+                        bordered: true
+                        selected: true
+                        enabled: !root.operationRunning
+                        foreground: root.foreground
+                        accent: root.accent
+                        fontSize: root.smallFontSize
+                        onClicked: {
+                          if (parent.instPlugin) {
+                            var pWithCommits = Object.assign({}, parent.instPlugin, {
+                              localCommit: String(parent.updateInfo.localCommit || ""),
+                              remoteCommit: String(parent.updateInfo.remoteCommit || "")
+                            })
+                            root.requestManagementAction("update", pWithCommits)
+                          }
+                        }
+                      }
+
+                      // 4. Remove / Uninstall Button (when installed, third-party)
+                      Button {
+                        visible: root.selectedPlugin && root.selectedPlugin.installed && parent.instPlugin !== null && !parent.instPlugin.firstParty && parent.instPlugin.pluginId !== "waldseelen.market"
+                        text: "Remove"
+                        bordered: true
+                        enabled: !root.operationRunning
+                        foreground: Color.urgent
+                        accent: Color.urgent
+                        fontSize: root.smallFontSize
+                        onClicked: {
+                          if (parent.instPlugin) root.requestManagementAction("remove", parent.instPlugin)
+                        }
+                      }
+
+                      // 5. Copy Command
                       Button {
                         text: "📋 Copy Command"
                         bordered: true
@@ -1699,6 +1798,7 @@ Item {
                         onClicked: if (root.selectedPlugin) root.copyInstallCommand(root.selectedPlugin)
                       }
 
+                      // 6. View on GitHub
                       Button {
                         text: "🌐 View on GitHub"
                         bordered: true
@@ -2124,6 +2224,158 @@ Item {
             opacity: 0.45
             font.family: root.fontFamily
             font.pixelSize: root.captionFontSize
+          }
+        }
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // Action Confirmation & Choice Dialog (z: 100 overlay)
+    // ------------------------------------------------------------------------
+    Rectangle {
+      id: confirmOverlay
+      anchors.fill: parent
+      visible: root.installConfirmOpen
+      z: 100
+      color: Util.alpha(Color.background, 0.78)
+
+      // Prevent clicks from reaching card/background
+      MouseArea {
+        anchors.fill: parent
+        onClicked: root.cancelInstall()
+      }
+
+      BorderSurface {
+        id: confirmCard
+        width: Math.min(parent.width - Style.space(32), Style.space(460))
+        height: confirmContentCol.implicitHeight + Style.space(40)
+        anchors.centerIn: parent
+        color: root.background
+        borderSpec: Border.surfaceSpec("menu", "border", root.pendingAction === "remove" ? Color.urgent : root.border, Math.max(1, Style.normalBorderWidth))
+        radius: Style.cornerRadius
+        clip: true
+
+        MouseArea {
+          anchors.fill: parent
+          onClicked: {} // Intercept clicks inside card
+        }
+
+        Column {
+          id: confirmContentCol
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.margins: Style.space(20)
+          spacing: Style.space(14)
+
+          // Title & Icon
+          Row {
+            spacing: Style.space(10)
+            anchors.left: parent.left
+            anchors.right: parent.right
+
+            Text {
+              text: root.pendingAction === "remove" ? "🗑️"
+                  : root.pendingAction === "update" ? "🔄"
+                  : root.pendingAction === "enable" ? "⚡"
+                  : "📦"
+              font.pixelSize: Style.space(20)
+              anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Text {
+              text: root.pendingAction === "install" ? "Install Plugin"
+                  : root.pendingAction === "remove" ? "Remove Plugin"
+                  : root.pendingAction === "update" ? "Update Plugin"
+                  : root.pendingAction === "enable" ? "Enable Plugin"
+                  : "Confirmation"
+              color: root.pendingAction === "remove" ? Color.urgent : root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.title
+              font.bold: true
+              anchors.verticalCenter: parent.verticalCenter
+            }
+          }
+
+          // Message
+          Text {
+            width: parent.width
+            text: root.pendingPlugin || root.pendingManagedPlugin ? root.confirmationMessage() : ""
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+            lineHeight: 1.25
+          }
+
+          // Bar-Widget Placement Choice (Left / Center / Right)
+          Column {
+            width: parent.width
+            spacing: Style.space(6)
+            visible: (root.pendingAction === "install" || root.pendingAction === "enable") &&
+                     root.isBarWidget(root.pendingPlugin || root.pendingManagedPlugin)
+
+            Text {
+              text: "Bar Section Placement:"
+              color: root.foreground
+              opacity: 0.8
+              font.family: root.fontFamily
+              font.pixelSize: root.captionFontSize
+              font.bold: true
+            }
+
+            Row {
+              spacing: Style.space(8)
+
+              Repeater {
+                model: [
+                  { id: "left", label: "Left" },
+                  { id: "center", label: "Center" },
+                  { id: "right", label: "Right" }
+                ]
+
+                Button {
+                  required property var modelData
+                  text: modelData.label
+                  bordered: true
+                  selected: root.pendingPlacement === modelData.id
+                  foreground: root.foreground
+                  accent: root.accent
+                  fontSize: root.captionFontSize
+                  height: Style.space(30)
+                  onClicked: root.pendingPlacement = modelData.id
+                }
+              }
+            }
+          }
+
+          Item { width: 1; height: Style.space(4) }
+
+          // Buttons Row
+          Row {
+            anchors.right: parent.right
+            spacing: Style.space(10)
+
+            Button {
+              text: "Cancel"
+              height: Style.space(34)
+              bordered: true
+              foreground: root.foreground
+              accent: root.accent
+              fontSize: Style.font.caption
+              onClicked: root.cancelInstall()
+            }
+
+            Button {
+              text: root.confirmationButtonText()
+              height: Style.space(34)
+              bordered: true
+              selected: true
+              foreground: root.pendingAction === "remove" ? Color.urgent : root.foreground
+              accent: root.pendingAction === "remove" ? Color.urgent : root.accent
+              fontSize: Style.font.caption
+              onClicked: root.confirmPendingAction()
+            }
           }
         }
       }

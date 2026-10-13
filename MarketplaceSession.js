@@ -11,3 +11,4 @@ var pendingInstallToken = ""
 var pendingInstallAllowEnable = false
 var pendingInstallAttempts = 0
 var pendingEnableAttempts = 0
+var pendingPlacement = "center"
