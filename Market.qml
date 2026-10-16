@@ -191,6 +191,13 @@ Item {
     root.statusMessage = ""
     root.refreshInstalled()
 
+    try {
+      if (payloadJson) {
+        var p = typeof payloadJson === "string" ? JSON.parse(payloadJson) : payloadJson
+        if (p && p.view) root.setView(p.view)
+      }
+    } catch (e) {}
+
     if (!root.catalogLoaded) {
       // First try loading instantaneous local cache
       localCacheProc.running = true
