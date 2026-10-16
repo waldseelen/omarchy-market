@@ -96,20 +96,31 @@ function compareNames(first, second) {
 
 function sortPlugins(plugins, mode, engagement) {
   var metric = mode === "views" || mode === "copies" || mode === "hearts" ? mode : ""
-  var effectiveMode = mode === "verified" || mode === "unverified" ? "added" : mode
   var decorated = plugins.map(function(plugin) {
     var key = 0
-    if (effectiveMode === "added") key = listingTime(plugin)
-    else if (effectiveMode === "updated") key = activityTime(plugin)
-    else if (effectiveMode === "stars") key = count(plugin.stars)
-    else if (metric) {
+    var secondary = 0
+    if (mode === "added") {
+      key = listingTime(plugin)
+    } else if (mode === "updated") {
+      key = activityTime(plugin)
+    } else if (mode === "stars") {
+      key = count(plugin.stars)
+      secondary = listingTime(plugin)
+    } else if (metric) {
       var stats = engagement && engagement[plugin.id] ? engagement[plugin.id] : {}
       key = count(stats[metric])
+      secondary = count(plugin.stars)
+    } else if (mode === "verified") {
+      key = plugin.verificationStatus === "verified" ? 1 : 0
+      secondary = listingTime(plugin)
     }
-    return { plugin: plugin, key: key }
+    return { plugin: plugin, key: key, secondary: secondary }
   })
   decorated.sort(function(first, second) {
-    return second.key - first.key || compareNames(first.plugin, second.plugin)
+    if (mode === "name") {
+      return compareNames(first.plugin, second.plugin)
+    }
+    return (second.key - first.key) || (second.secondary - first.secondary) || compareNames(first.plugin, second.plugin)
   })
   return decorated.map(function(entry) { return entry.plugin })
 }

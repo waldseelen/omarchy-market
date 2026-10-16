@@ -87,23 +87,16 @@ Item {
   property bool loadingReadme: false
   property string currentReadmeRepo: ""
 
-  readonly property var sortOptions: {
-    var options = [
-      { value: "added", label: "Recently added" },
-      { value: "updated", label: "Recent activity" },
-      { value: "stars", label: "Most starred" }
-    ]
-    if (root.engagementAvailable) options = options.concat([
-      { value: "views", label: "Most viewed" },
-      { value: "copies", label: "Most copied" },
-      { value: "hearts", label: "Most hearts" }
-    ])
-    return options.concat([
-      { value: "name", label: "A-Z" },
-      { value: "verified", label: "Verified" },
-      { value: "unverified", label: "Unverified" }
-    ])
-  }
+  readonly property var sortOptions: [
+    { value: "added", label: "Recently added" },
+    { value: "updated", label: "Recent activity" },
+    { value: "copies", label: "Most downloaded / copies" },
+    { value: "stars", label: "Most starred (★)" },
+    { value: "views", label: "Most viewed (👁)" },
+    { value: "hearts", label: "Most liked (❤️)" },
+    { value: "name", label: "A-Z" },
+    { value: "verified", label: "Verified first" }
+  ]
 
   readonly property var managementOptions: [
     { value: "all", label: "All plugins" },
@@ -369,6 +362,7 @@ Item {
         upstreamCommit: String(plugin.upstreamValidatedCommit || ""),
         installed: root.installedIds[pluginId] === true,
         viewsText: MarketplaceModel.formatCount(root.engagementAvailable ? stats.views : -1),
+        copiesText: MarketplaceModel.formatCount(root.engagementAvailable ? stats.copies : -1),
         starsText: MarketplaceModel.formatCount(plugin.stars),
         heartsText: MarketplaceModel.formatCount(root.engagementAvailable ? stats.hearts : -1)
       })
@@ -1420,7 +1414,7 @@ Item {
           Dropdown {
             id: sortDropdown
             visible: root.viewMode === "browse"
-            width: Style.space(190)
+            width: Style.space(225)
             height: parent.height
             options: root.sortOptions
             value: root.sortMode
@@ -1580,7 +1574,14 @@ Item {
 
                       Text {
                         id: metricsText
-                        text: "★ " + pluginRow.modelData.starsText + (root.engagementAvailable ? "  👁 " + pluginRow.modelData.viewsText : "")
+                        text: {
+                          var m = "★ " + pluginRow.modelData.starsText
+                          if (pluginRow.modelData.copiesText && pluginRow.modelData.copiesText !== "—")
+                            m += "  📥 " + pluginRow.modelData.copiesText
+                          if (pluginRow.modelData.viewsText && pluginRow.modelData.viewsText !== "—")
+                            m += "  👁 " + pluginRow.modelData.viewsText
+                          return m
+                        }
                         color: root.foreground
                         opacity: 0.65
                         font.family: root.fontFamily
@@ -1721,6 +1722,44 @@ Item {
                         id: badgeRow
                         spacing: Style.space(6)
 
+                        // Stars Badge
+                        BorderSurface {
+                          visible: root.selectedPlugin && root.selectedPlugin.starsText !== "—"
+                          width: starsBadgeText.implicitWidth + Style.space(12)
+                          height: Style.space(24)
+                          color: Util.alpha(root.foreground, 0.06)
+                          borderSpec: Border.none()
+                          radius: Style.space(4)
+                          Text {
+                            id: starsBadgeText
+                            anchors.centerIn: parent
+                            text: root.selectedPlugin ? "★ " + root.selectedPlugin.starsText : ""
+                            color: root.foreground
+                            font.family: root.fontFamily
+                            font.pixelSize: root.captionFontSize
+                          }
+                        }
+
+                        // Downloads / Installs Badge
+                        BorderSurface {
+                          visible: root.selectedPlugin && root.selectedPlugin.copiesText && root.selectedPlugin.copiesText !== "—"
+                          width: copiesBadgeText.implicitWidth + Style.space(12)
+                          height: Style.space(24)
+                          color: Util.alpha(root.accent, 0.12)
+                          borderSpec: Border.none()
+                          radius: Style.space(4)
+                          Text {
+                            id: copiesBadgeText
+                            anchors.centerIn: parent
+                            text: root.selectedPlugin ? "📥 " + root.selectedPlugin.copiesText : ""
+                            color: root.accent
+                            font.family: root.fontFamily
+                            font.pixelSize: root.captionFontSize
+                            font.bold: true
+                          }
+                        }
+
+                        // Verification Badge
                         BorderSurface {
                           width: detailBadgeText.implicitWidth + Style.space(14)
                           height: Style.space(24)
