@@ -1984,11 +1984,13 @@ Item {
             Item {
               id: managedPane
               anchors.fill: parent
-              readonly property real colActions: Style.space(220)
-              readonly property real colStatus: Style.space(90)
-              readonly property real colSource: Style.space(90)
-              readonly property real colType: Style.space(110)
-              readonly property real colPlugin: width - colActions - colStatus - colSource - colType
+              readonly property real rowMargin: Style.space(16)
+              readonly property real tableInnerWidth: Math.max(100, width - rowMargin * 2)
+              readonly property real colActions: Style.space(260)
+              readonly property real colStatus: Style.space(85)
+              readonly property real colSource: Style.space(80)
+              readonly property real colType: Style.space(100)
+              readonly property real colPlugin: Math.max(Style.space(150), tableInnerWidth - colActions - colStatus - colSource - colType)
 
               // Table Header
               Rectangle {
@@ -2001,8 +2003,8 @@ Item {
 
                 Row {
                   anchors.fill: parent
-                  anchors.leftMargin: Style.space(10)
-                  anchors.rightMargin: Style.space(10)
+                  anchors.leftMargin: managedPane.rowMargin
+                  anchors.rightMargin: managedPane.rowMargin
 
                   Text {
                     width: managedPane.colPlugin
@@ -2079,8 +2081,8 @@ Item {
 
                   Row {
                     anchors.fill: parent
-                    anchors.leftMargin: Style.space(10)
-                    anchors.rightMargin: Style.space(10)
+                    anchors.leftMargin: managedPane.rowMargin
+                    anchors.rightMargin: managedPane.rowMargin
 
                     Column {
                       width: managedPane.colPlugin
