@@ -28,6 +28,7 @@ Item {
   property string rightTabMode: "overview" // "overview" | "readme"
   property string categoryFilter: "all" // "all" | "verified" | "bar-widget" | "overlay" | "service" | "panel" | "menu"
   property string sortMode: "added"
+  property bool sortAscending: false
   property string managementFilter: "all"
   property int selectedIndex: 0
   property bool preserveSelectionForNextRebuild: true
@@ -87,15 +88,49 @@ Item {
   property bool loadingReadme: false
   property string currentReadmeRepo: ""
 
-  readonly property var sortOptions: [
-    { value: "added", label: "Recently added" },
-    { value: "updated", label: "Recent activity" },
-    { value: "copies", label: "Most downloaded / copies" },
-    { value: "stars", label: "Most starred (★)" },
-    { value: "views", label: "Most viewed (👁)" },
-    { value: "hearts", label: "Most liked (❤️)" },
-    { value: "name", label: "A-Z" },
-    { value: "verified", label: "Verified first" }
+  readonly property var sortButtons: [
+    {
+      id: "copies",
+      label: "📥 Copies",
+      defaultTip: "Sort by downloads/copies (highest first)",
+      descTip: "Sorted by copies (highest first) — Click for lowest first",
+      ascTip: "Sorted by copies (lowest first) — Click for highest first"
+    },
+    {
+      id: "stars",
+      label: "★ Stars",
+      defaultTip: "Sort by stars (highest first)",
+      descTip: "Sorted by stars (highest first) — Click for lowest first",
+      ascTip: "Sorted by stars (lowest first) — Click for highest first"
+    },
+    {
+      id: "views",
+      label: "👁 Views",
+      defaultTip: "Sort by views (highest first)",
+      descTip: "Sorted by views (highest first) — Click for lowest first",
+      ascTip: "Sorted by views (lowest first) — Click for highest first"
+    },
+    {
+      id: "hearts",
+      label: "❤️ Likes",
+      defaultTip: "Sort by likes (highest first)",
+      descTip: "Sorted by likes (highest first) — Click for lowest first",
+      ascTip: "Sorted by likes (lowest first) — Click for highest first"
+    },
+    {
+      id: "added",
+      label: "🕒 Added",
+      defaultTip: "Sort by date added (newest first)",
+      descTip: "Sorted by date added (newest first) — Click for oldest first",
+      ascTip: "Sorted by date added (oldest first) — Click for newest first"
+    },
+    {
+      id: "name",
+      label: "🔤 Name",
+      defaultTip: "Sort alphabetically (A to Z)",
+      descTip: "Sorted by name (Z to A) — Click for A to Z",
+      ascTip: "Sorted by name (A to Z) — Click for Z to A"
+    }
   ]
 
   readonly property var managementOptions: [
@@ -337,7 +372,7 @@ Item {
         matchingPlugins.push(candidate)
       }
     }
-    matchingPlugins = MarketplaceModel.sortPlugins(matchingPlugins, root.sortMode, root.engagementStats)
+    matchingPlugins = MarketplaceModel.sortPlugins(matchingPlugins, root.sortMode, root.engagementStats, root.sortAscending)
 
     var rows = []
     for (var sortedIndex = 0; sortedIndex < matchingPlugins.length; sortedIndex++) {
@@ -425,8 +460,16 @@ Item {
   }
 
   function setSort(mode) {
-    if (root.sortMode === mode) return
-    root.sortMode = mode
+    root.toggleSort(mode)
+  }
+
+  function toggleSort(mode) {
+    if (root.sortMode === mode) {
+      root.sortAscending = !root.sortAscending
+    } else {
+      root.sortMode = mode
+      root.sortAscending = (mode === "name")
+    }
     root.scheduleRebuild(false)
   }
 
@@ -1212,7 +1255,7 @@ Item {
             }
             return
           }
-          if (sortDropdown.popupOpen || managementDropdown.popupOpen) return
+          if (managementDropdown.popupOpen) return
 
           if (event.key === Qt.Key_Escape) {
             if (searchField && searchField.activeFocus && searchField.text) searchField.clear()
@@ -1393,7 +1436,7 @@ Item {
 
           TextField {
             id: searchField
-            width: root.viewMode === "browse" ? parent.width - sortDropdown.width - parent.spacing
+            width: root.viewMode === "browse" ? Math.max(Style.space(160), parent.width - sortBar.implicitWidth - parent.spacing)
               : (root.viewMode === "manage" ? parent.width - managementDropdown.width - parent.spacing : parent.width)
             height: parent.height
             placeholderText: root.viewMode === "browse"
@@ -1411,16 +1454,40 @@ Item {
             Keys.onUpPressed: root.selectRelative(-1)
           }
 
-          Dropdown {
-            id: sortDropdown
+          Row {
+            id: sortBar
             visible: root.viewMode === "browse"
-            width: Style.space(225)
             height: parent.height
-            options: root.sortOptions
-            value: root.sortMode
-            foreground: root.foreground
-            accent: root.accent
-            onChanged: function(val) { root.setSort(val) }
+            spacing: Style.space(4)
+
+            Repeater {
+              model: root.sortButtons
+              delegate: Button {
+                required property var modelData
+                height: parent.height
+                bordered: true
+                focusable: false
+                horizontalPadding: Style.space(8)
+                selected: root.sortMode === modelData.id
+                foreground: root.foreground
+                accent: root.accent
+                fontSize: root.captionFontSize
+                text: {
+                  var base = modelData.label
+                  if (root.sortMode === modelData.id) {
+                    return base + (root.sortAscending ? " ↑" : " ↓")
+                  }
+                  return base
+                }
+                tooltipText: {
+                  if (root.sortMode === modelData.id) {
+                    return root.sortAscending ? modelData.ascTip : modelData.descTip
+                  }
+                  return modelData.defaultTip
+                }
+                onClicked: root.toggleSort(modelData.id)
+              }
+            }
           }
 
           Dropdown {

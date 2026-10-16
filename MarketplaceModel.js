@@ -94,7 +94,8 @@ function compareNames(first, second) {
   return firstId < secondId ? -1 : firstId > secondId ? 1 : 0
 }
 
-function sortPlugins(plugins, mode, engagement) {
+function sortPlugins(plugins, mode, engagement, ascending) {
+  var isAsc = ascending === true
   var metric = mode === "views" || mode === "copies" || mode === "hearts" ? mode : ""
   var decorated = plugins.map(function(plugin) {
     var key = 0
@@ -118,9 +119,12 @@ function sortPlugins(plugins, mode, engagement) {
   })
   decorated.sort(function(first, second) {
     if (mode === "name") {
-      return compareNames(first.plugin, second.plugin)
+      var n = compareNames(first.plugin, second.plugin)
+      return isAsc ? n : -n
     }
-    return (second.key - first.key) || (second.secondary - first.secondary) || compareNames(first.plugin, second.plugin)
+    var diff = isAsc ? (first.key - second.key) : (second.key - first.key)
+    var secDiff = isAsc ? (first.secondary - second.secondary) : (second.secondary - first.secondary)
+    return diff || secDiff || compareNames(first.plugin, second.plugin)
   })
   return decorated.map(function(entry) { return entry.plugin })
 }
