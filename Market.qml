@@ -479,6 +479,40 @@ Item {
     openBrowserProc.running = true
   }
 
+  function openOmarchyPluginPage(plugin) {
+    if (!plugin || !plugin.pluginId) return
+    var url = "https://plugins.omarchy.org/?draft=" + encodeURIComponent(plugin.pluginId) + "#catalog"
+    openBrowserProc.command = ["xdg-open", url]
+    openBrowserProc.running = true
+  }
+
+  function copyTextToClipboard(text) {
+    if (!text) return
+    var safeText = text.replace(/'/g, "'\\''")
+    copyCmdProc.command = ["bash", "-c", "echo -n '" + safeText + "' | wl-copy && notify-send 'Omarchy Market' 'Copied to clipboard:\n" + safeText + "' -i software-properties 2>/dev/null || true"]
+    copyCmdProc.running = true
+    root.statusMessage = "Copied to clipboard."
+  }
+
+  function installCommandFor(plugin, placement) {
+    if (!plugin) return ""
+    var repo = plugin.repo || ""
+    var cmd = "omarchy plugin add " + repo + " --enable"
+    if (root.isBarWidget(plugin) && placement) {
+      cmd += " --section " + placement
+    }
+    return cmd
+  }
+
+  function enableCommandFor(plugin, placement) {
+    if (!plugin) return ""
+    var cmd = "omarchy plugin enable " + plugin.pluginId
+    if (root.isBarWidget(plugin) && placement) {
+      cmd += " --section " + placement
+    }
+    return cmd
+  }
+
   // --------------------------------------------------------------------------
   // Installed Plugins & Management
   // --------------------------------------------------------------------------
@@ -646,10 +680,15 @@ Item {
   // Installation & Management Actions
   // --------------------------------------------------------------------------
   function requestInstall(plugin) {
-    if (root.installBusy || !root.installedRequestParsed || !plugin
-        || plugin.installed || !plugin.installAvailable
-        || !MarketplaceModel.pluginIdIsSafe(plugin.pluginId)
-        || !MarketplaceModel.repoIsSafe(plugin.repo)) return
+    if (!plugin) return
+    if (plugin.installed) {
+      root.statusMessage = plugin.pluginName + " is already installed."
+      return
+    }
+    if (root.installBusy) {
+      root.statusMessage = "Another installation or update is in progress."
+      return
+    }
     root.pendingPlugin = plugin
     root.pendingAction = "install"
     root.pendingPlacement = "center"
@@ -669,13 +708,11 @@ Item {
   function confirmInstall() {
     var plugin = root.pendingPlugin
     root.installConfirmOpen = false
-    if (root.installBusy || !root.installedRequestParsed || !plugin
-        || plugin.installed || !plugin.installAvailable
-        || !MarketplaceModel.pluginIdIsSafe(plugin.pluginId)
+    if (!plugin || !MarketplaceModel.pluginIdIsSafe(plugin.pluginId)
         || !MarketplaceModel.repoIsSafe(plugin.repo)) {
       root.pendingPlugin = null
       root.pendingAction = ""
-      root.statusMessage = "Installation blocked: plugin is not available for automatic install."
+      root.statusMessage = "Installation blocked: plugin repository is not valid."
       return
     }
     root.installingPluginId = plugin.pluginId
@@ -1622,7 +1659,7 @@ Item {
                         id: detailPreview
                         anchors.fill: parent
                         anchors.margins: Style.space(8)
-                        source: root.previewPath
+                        source: root.previewPath ? ("file://" + root.previewPath) : (root.selectedPlugin ? String(root.selectedPlugin.previewImage || "") : "")
                         visible: source.toString() !== ""
                         asynchronous: true
                         cache: true
@@ -1806,6 +1843,16 @@ Item {
                         accent: root.accent
                         fontSize: root.smallFontSize
                         onClicked: if (root.selectedPlugin) root.openGithubRepo(root.selectedPlugin)
+                      }
+
+                      // 7. View on Omarchy Website
+                      Button {
+                        text: "🛍️ Omarchy Page"
+                        bordered: true
+                        foreground: root.foreground
+                        accent: root.accent
+                        fontSize: root.smallFontSize
+                        onClicked: if (root.selectedPlugin) root.openOmarchyPluginPage(root.selectedPlugin)
                       }
                     }
                   }
@@ -2237,7 +2284,7 @@ Item {
       anchors.fill: parent
       visible: root.installConfirmOpen
       z: 100
-      color: Util.alpha(Color.background, 0.78)
+      color: Util.alpha(Color.background, 0.8)
 
       // Prevent clicks from reaching card/background
       MouseArea {
@@ -2247,7 +2294,7 @@ Item {
 
       BorderSurface {
         id: confirmCard
-        width: Math.min(parent.width - Style.space(32), Style.space(460))
+        width: Math.min(parent.width - Style.space(32), Style.space(520))
         height: confirmContentCol.implicitHeight + Style.space(40)
         anchors.centerIn: parent
         color: root.background
@@ -2262,53 +2309,123 @@ Item {
 
         Column {
           id: confirmContentCol
-          anchors.left: parent.left
-          anchors.right: parent.right
-          anchors.top: parent.top
-          anchors.margins: Style.space(20)
-          spacing: Style.space(14)
+          width: confirmCard.width - Style.space(40)
+          x: Style.space(20)
+          y: Style.space(20)
+          spacing: Style.space(12)
 
-          // Title & Icon
+          // 1. Title & Icon
           Row {
+            width: parent.width
             spacing: Style.space(10)
-            anchors.left: parent.left
-            anchors.right: parent.right
 
             Text {
               text: root.pendingAction === "remove" ? "🗑️"
                   : root.pendingAction === "update" ? "🔄"
                   : root.pendingAction === "enable" ? "⚡"
                   : "📦"
-              font.pixelSize: Style.space(20)
+              font.pixelSize: Style.space(22)
               anchors.verticalCenter: parent.verticalCenter
             }
 
-            Text {
-              text: root.pendingAction === "install" ? "Install Plugin"
-                  : root.pendingAction === "remove" ? "Remove Plugin"
-                  : root.pendingAction === "update" ? "Update Plugin"
-                  : root.pendingAction === "enable" ? "Enable Plugin"
-                  : "Confirmation"
-              color: root.pendingAction === "remove" ? Color.urgent : root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.title
-              font.bold: true
+            Column {
+              width: parent.width - Style.space(34)
               anchors.verticalCenter: parent.verticalCenter
+              spacing: 2
+
+              Text {
+                width: parent.width
+                text: root.pendingAction === "install" ? "Install Plugin"
+                    : root.pendingAction === "remove" ? "Remove Plugin"
+                    : root.pendingAction === "update" ? "Update Plugin"
+                    : root.pendingAction === "enable" ? "Enable Plugin"
+                    : "Confirmation"
+                color: root.pendingAction === "remove" ? Color.urgent : root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+                elide: Text.ElideRight
+              }
+
+              Text {
+                width: parent.width
+                visible: root.pendingPlugin !== null || root.pendingManagedPlugin !== null
+                text: (root.pendingPlugin || root.pendingManagedPlugin ? (root.pendingPlugin || root.pendingManagedPlugin).pluginName : "")
+                color: root.accent
+                font.family: root.fontFamily
+                font.pixelSize: root.smallFontSize
+                elide: Text.ElideRight
+              }
             }
           }
 
-          // Message
+          // 2. Explanatory message
           Text {
             width: parent.width
             text: root.pendingPlugin || root.pendingManagedPlugin ? root.confirmationMessage() : ""
             color: root.foreground
             font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
+            font.pixelSize: root.captionFontSize
             wrapMode: Text.WordWrap
+            opacity: 0.8
             lineHeight: 1.25
           }
 
-          // Bar-Widget Placement Choice (Left / Center / Right)
+          // 3. Auto-Inserted CLI Command Box (shown for install & enable)
+          Column {
+            width: parent.width
+            spacing: Style.space(6)
+            visible: root.pendingAction === "install" || root.pendingAction === "enable"
+
+            Text {
+              text: "Download / Run Command:"
+              color: root.foreground
+              opacity: 0.85
+              font.family: root.fontFamily
+              font.pixelSize: root.captionFontSize
+              font.bold: true
+            }
+
+            BorderSurface {
+              width: parent.width
+              height: Style.space(42)
+              color: Util.alpha(Color.foreground, 0.05)
+              borderSpec: Border.flat(Util.alpha(root.foreground, 0.25), 1)
+              radius: Style.cornerRadius
+
+              Row {
+                anchors.fill: parent
+                anchors.leftMargin: Style.space(10)
+                anchors.rightMargin: Style.space(6)
+                spacing: Style.space(6)
+
+                Text {
+                  id: cmdPreviewText
+                  width: parent.width - copyCmdBtn.width - parent.spacing
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: root.pendingAction === "enable"
+                    ? root.enableCommandFor(root.pendingManagedPlugin, root.pendingPlacement)
+                    : root.installCommandFor(root.pendingPlugin, root.pendingPlacement)
+                  color: root.accent
+                  font.family: Style.font.monospaceFamily || "monospace"
+                  font.pixelSize: root.captionFontSize
+                  elide: Text.ElideMiddle
+                }
+
+                Button {
+                  id: copyCmdBtn
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: "📋 Copy"
+                  bordered: true
+                  height: Style.space(30)
+                  fontSize: root.captionFontSize
+                  onClicked: root.copyTextToClipboard(cmdPreviewText.text)
+                }
+              }
+            }
+          }
+
+          // 4. Bar-Widget Placement Choice (Left / Center / Right)
           Column {
             width: parent.width
             spacing: Style.space(6)
@@ -2318,7 +2435,7 @@ Item {
             Text {
               text: "Bar Section Placement:"
               color: root.foreground
-              opacity: 0.8
+              opacity: 0.85
               font.family: root.fontFamily
               font.pixelSize: root.captionFontSize
               font.bold: true
@@ -2351,7 +2468,7 @@ Item {
 
           Item { width: 1; height: Style.space(4) }
 
-          // Buttons Row
+          // 5. Action Buttons Row
           Row {
             anchors.right: parent.right
             spacing: Style.space(10)
