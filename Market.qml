@@ -494,14 +494,10 @@ Item {
     root.statusMessage = "Copied to clipboard."
   }
 
-  function installCommandFor(plugin, placement) {
+  function installCommandFor(plugin) {
     if (!plugin) return ""
     var repo = plugin.repo || ""
-    var cmd = "omarchy plugin add " + repo + " --enable"
-    if (root.isBarWidget(plugin) && placement) {
-      cmd += " --section " + placement
-    }
-    return cmd
+    return "omarchy plugin add " + repo + " --enable"
   }
 
   function enableCommandFor(plugin, placement) {
@@ -511,6 +507,36 @@ Item {
       cmd += " --section " + placement
     }
     return cmd
+  }
+
+  function updateCommandFor(plugin) {
+    if (!plugin) return ""
+    return "omarchy plugin update " + plugin.pluginId
+  }
+
+  function removeCommandFor(plugin) {
+    if (!plugin) return ""
+    return "omarchy plugin remove " + plugin.pluginId
+  }
+
+  function currentPendingCommand() {
+    if (root.pendingAction === "install") {
+      return root.installCommandFor(root.pendingPlugin)
+    } else if (root.pendingAction === "enable") {
+      return root.enableCommandFor(root.pendingManagedPlugin, root.pendingPlacement)
+    } else if (root.pendingAction === "update") {
+      return root.updateCommandFor(root.pendingManagedPlugin)
+    } else if (root.pendingAction === "remove") {
+      return root.removeCommandFor(root.pendingManagedPlugin)
+    }
+    return ""
+  }
+
+  function runInTerminal(command) {
+    if (!command) return
+    var targetCmd = command
+    root.dismiss()
+    Util.execDetached("omarchy-launch-floating-terminal-with-presentation " + targetCmd)
   }
 
   // --------------------------------------------------------------------------
@@ -1178,7 +1204,9 @@ Item {
               root.cancelInstall()
               event.accepted = true
             } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-              root.confirmPendingAction()
+              var cmd = root.currentPendingCommand()
+              root.cancelInstall()
+              root.runInTerminal(cmd)
               event.accepted = true
             }
             return
@@ -2371,14 +2399,14 @@ Item {
             lineHeight: 1.25
           }
 
-          // 3. Auto-Inserted CLI Command Box (shown for install & enable)
+          // 3. Auto-Inserted CLI Command Box
           Column {
             width: parent.width
             spacing: Style.space(6)
-            visible: root.pendingAction === "install" || root.pendingAction === "enable"
+            visible: root.currentPendingCommand() !== ""
 
             Text {
-              text: "Download / Run Command:"
+              text: root.pendingAction === "install" ? "Download / Run Command:" : "CLI Command:"
               color: root.foreground
               opacity: 0.85
               font.family: root.fontFamily
@@ -2403,9 +2431,7 @@ Item {
                   id: cmdPreviewText
                   width: parent.width - copyCmdBtn.width - parent.spacing
                   anchors.verticalCenter: parent.verticalCenter
-                  text: root.pendingAction === "enable"
-                    ? root.enableCommandFor(root.pendingManagedPlugin, root.pendingPlacement)
-                    : root.installCommandFor(root.pendingPlugin, root.pendingPlacement)
+                  text: root.currentPendingCommand()
                   color: root.accent
                   font.family: Style.font.monospaceFamily || "monospace"
                   font.pixelSize: root.captionFontSize
@@ -2425,7 +2451,7 @@ Item {
             }
           }
 
-          // 4. Bar-Widget Placement Choice (Left / Center / Right)
+          // 4. Bar-Widget Placement Choice & Hint
           Column {
             width: parent.width
             spacing: Style.space(6)
@@ -2433,34 +2459,51 @@ Item {
                      root.isBarWidget(root.pendingPlugin || root.pendingManagedPlugin)
 
             Text {
-              text: "Bar Section Placement:"
-              color: root.foreground
-              opacity: 0.85
+              visible: root.pendingAction === "install"
+              width: parent.width
+              text: "💡 Section placement (Left / Center / Right) will be asked interactively in the terminal."
+              color: root.accent
+              opacity: 0.9
               font.family: root.fontFamily
               font.pixelSize: root.captionFontSize
-              font.bold: true
+              wrapMode: Text.WordWrap
             }
 
-            Row {
-              spacing: Style.space(8)
+            Column {
+              width: parent.width
+              spacing: Style.space(6)
+              visible: root.pendingAction === "enable"
 
-              Repeater {
-                model: [
-                  { id: "left", label: "Left" },
-                  { id: "center", label: "Center" },
-                  { id: "right", label: "Right" }
-                ]
+              Text {
+                text: "Bar Section Placement:"
+                color: root.foreground
+                opacity: 0.85
+                font.family: root.fontFamily
+                font.pixelSize: root.captionFontSize
+                font.bold: true
+              }
 
-                Button {
-                  required property var modelData
-                  text: modelData.label
-                  bordered: true
-                  selected: root.pendingPlacement === modelData.id
-                  foreground: root.foreground
-                  accent: root.accent
-                  fontSize: root.captionFontSize
-                  height: Style.space(30)
-                  onClicked: root.pendingPlacement = modelData.id
+              Row {
+                spacing: Style.space(8)
+
+                Repeater {
+                  model: [
+                    { id: "left", label: "Left" },
+                    { id: "center", label: "Center" },
+                    { id: "right", label: "Right" }
+                  ]
+
+                  Button {
+                    required property var modelData
+                    text: modelData.label
+                    bordered: true
+                    selected: root.pendingPlacement === modelData.id
+                    foreground: root.foreground
+                    accent: root.accent
+                    fontSize: root.captionFontSize
+                    height: Style.space(30)
+                    onClicked: root.pendingPlacement = modelData.id
+                  }
                 }
               }
             }
@@ -2484,14 +2527,32 @@ Item {
             }
 
             Button {
-              text: root.confirmationButtonText()
+              visible: root.pendingAction !== "remove"
+              text: "⚡ Background"
+              height: Style.space(34)
+              bordered: true
+              foreground: root.foreground
+              accent: root.accent
+              fontSize: Style.font.caption
+              onClicked: root.confirmPendingAction()
+            }
+
+            Button {
+              text: root.pendingAction === "remove" ? "🗑️ Remove in Terminal"
+                  : root.pendingAction === "update" ? "🔄 Update in Terminal"
+                  : root.pendingAction === "enable" ? "⚡ Enable in Terminal"
+                  : "🚀 Install in Terminal"
               height: Style.space(34)
               bordered: true
               selected: true
               foreground: root.pendingAction === "remove" ? Color.urgent : root.foreground
               accent: root.pendingAction === "remove" ? Color.urgent : root.accent
               fontSize: Style.font.caption
-              onClicked: root.confirmPendingAction()
+              onClicked: {
+                var cmd = root.currentPendingCommand()
+                root.cancelInstall()
+                root.runInTerminal(cmd)
+              }
             }
           }
         }
