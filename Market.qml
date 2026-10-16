@@ -481,7 +481,7 @@ Item {
 
   function openOmarchyPluginPage(plugin) {
     if (!plugin || !plugin.pluginId) return
-    var url = "https://plugins.omarchy.org/?draft=" + encodeURIComponent(plugin.pluginId) + "#catalog"
+    var url = "https://plugins.omarchy.org/?q=" + encodeURIComponent(plugin.pluginId) + "#catalog"
     openBrowserProc.command = ["xdg-open", url]
     openBrowserProc.running = true
   }
@@ -1781,8 +1781,8 @@ Item {
 
                     Item { width: 1; height: Style.space(4) }
 
-                    // Action Buttons Row
-                    Row {
+                    // Action Buttons Flow (wraps cleanly to avoid clipping)
+                    Flow {
                       width: parent.width
                       spacing: Style.space(8)
 
@@ -1853,17 +1853,7 @@ Item {
                         }
                       }
 
-                      // 5. Copy Command
-                      Button {
-                        text: "📋 Copy Command"
-                        bordered: true
-                        foreground: root.foreground
-                        accent: root.accent
-                        fontSize: root.smallFontSize
-                        onClicked: if (root.selectedPlugin) root.copyInstallCommand(root.selectedPlugin)
-                      }
-
-                      // 6. View on GitHub
+                      // 5. View on GitHub
                       Button {
                         text: "🌐 View on GitHub"
                         bordered: true
@@ -1873,7 +1863,7 @@ Item {
                         onClicked: if (root.selectedPlugin) root.openGithubRepo(root.selectedPlugin)
                       }
 
-                      // 7. View on Omarchy Website
+                      // 6. View on Omarchy Website (Next to GitHub)
                       Button {
                         text: "🛍️ Omarchy Page"
                         bordered: true
@@ -1881,6 +1871,16 @@ Item {
                         accent: root.accent
                         fontSize: root.smallFontSize
                         onClicked: if (root.selectedPlugin) root.openOmarchyPluginPage(root.selectedPlugin)
+                      }
+
+                      // 7. Copy Command
+                      Button {
+                        text: "📋 Copy Command"
+                        bordered: true
+                        foreground: root.foreground
+                        accent: root.accent
+                        fontSize: root.smallFontSize
+                        onClicked: if (root.selectedPlugin) root.copyInstallCommand(root.selectedPlugin)
                       }
                     }
                   }
@@ -1899,7 +1899,7 @@ Item {
                     spacing: Style.space(8)
 
                     // Toolbar
-                    Row {
+                    Flow {
                       width: parent.width
                       spacing: Style.space(8)
 
@@ -1919,6 +1919,15 @@ Item {
                         accent: root.accent
                         fontSize: root.captionFontSize
                         onClicked: if (root.selectedPlugin) root.openGithubRepo(root.selectedPlugin)
+                      }
+
+                      Button {
+                        text: "🛍️ Omarchy Page"
+                        bordered: true
+                        foreground: root.foreground
+                        accent: root.accent
+                        fontSize: root.captionFontSize
+                        onClicked: if (root.selectedPlugin) root.openOmarchyPluginPage(root.selectedPlugin)
                       }
 
                       Button {
